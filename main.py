@@ -1,53 +1,63 @@
 from dotenv import load_dotenv
-# from pathlib import Path
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from pypdf import PdfReader
-from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
-from langchain_core.documents import Document
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
-client = HuggingFaceEndpoint(
-    repo_id="deepseek-ai/DeepSeek-R1",
-    
+
+embedding_model= HuggingFaceEmbeddings()
+
+# load the vector store
+vector_store= Chroma(
+    persist_directory="./chroma_db",
+    embedding_function=embedding_model
 )
 
-## Document Loader for text files
-# text = Path("document_loaders/notes.txt").read_text()
-
-# docs = [Document(page_content=text)]
-
-## Document Loader for pdf files
-reader = PdfReader("document_loaders/deeplearning.pdf")
-
-
-docs = []
-
-for page_num, page in enumerate(reader.pages):
-    text = page.extract_text() or ""
-
-    docs.append(
-        Document(
-            page_content=text,
-            metadata={
-                "source": "deeplearning.pdf",
-                "page": page_num
-            }
-        )
-    )
-
-
-## Implementing RecursiveCharacterTextSplitter for splitting the document into chunks of 1000 characters with an overlap of 200 characters. The separators used for splitting are double newlines, single newlines, spaces, and empty strings. This allows for more natural breaks in the text, preserving context and meaning across chunks.
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
-    chunk_overlap=200,
-    separators=["\n\n", "\n", " ", ""]
+retriever= vector_store.as_retriever(
+    search_type="mmr",
+    search_kwargs={
+        "k":4,
+        "fetch_k":10,
+        "lambda_mult": 0.5, # for diversity of results
+        }
 )
 
-chunks = splitter.split_documents(docs)
-template= ChatPromptTemplate.from_messages([
-    ("system","You are a high precision data summarizer that summarizes a document in 50 words."),
-    ("human","{data}")
+llm = ChatGroq(model="llama-3.3-70b-versatile")
+
+#prompt template
+prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are a helpful AI assistant.
+
+    Use ONLY the provided context to answer the question.
+
+    If the answer is not present in the context,
+    say: "I could not find the answer in the document."
+    """),
+    ("human", """Context:{context}
+    Question:{question}""")
     ])
-model = ChatHuggingFace(llm=client)
 
+print("Rag system created ")
+
+print("press 0 to exit ")
+
+while True:
+    query = input("You : ")
+    if query == "0":
+        break 
+    
+    docs = retriever.invoke(query)
+
+    context = "\n\n".join(
+        [doc.page_content for doc in docs]
+    )
+    
+    final_prompt = prompt.invoke({
+        "context" :context,
+        "question": query
+    })
+    
+    response = llm.invoke(final_prompt)
+
+    print(f"\n AI: {response.content}")
