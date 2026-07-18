@@ -1,9 +1,9 @@
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_classic.retrievers.multi_query import MultiQueryRetriever
 from dotenv import load_dotenv
-
+from langchain_groq import ChatGroq
 
 
 load_dotenv()
@@ -24,10 +24,7 @@ vectorstore = Chroma.from_documents(docs, embeddings)
 retriever = vectorstore.as_retriever()
 
 
-llm = HuggingFaceEndpoint(
-    repo_id="deepseek-ai/DeepSeek-R1",
-    
-)
+llm = ChatGroq(model="llama-3.3-70b-versatile")
 
 multi_query_retriever = MultiQueryRetriever.from_llm(
     retriever=retriever,
